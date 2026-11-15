@@ -12,6 +12,7 @@ from ok_tasks.czn_farm import (
     RunStatus,
     SessionState,
     is_graduated,
+    is_archive_profile_page,
     load_state,
     save_state,
 )
@@ -26,6 +27,16 @@ class GraduationTests(unittest.TestCase):
     def test_fewer_than_two_does_not_graduate(self):
         self.assertFalse(is_graduated(GraduationCriteria(True, False, False)))
         self.assertFalse(is_graduated(GraduationCriteria(False, False, False)))
+
+
+class ArchivePageTests(unittest.TestCase):
+    def test_archive_page_requires_both_detail_and_save_data_markers(self):
+        self.assertTrue(is_archive_profile_page(["詳細資訊", "存檔資料", "67350 TB"]))
+        self.assertFalse(is_archive_profile_page(["詳細資訊", "卡牌", "67350 TB"]))
+        self.assertFalse(is_archive_profile_page(["存檔資料", "卡牌"]))
+
+    def test_archive_page_marker_matching_ignores_whitespace(self):
+        self.assertTrue(is_archive_profile_page(["詳細 資訊", "存檔 資料"]))
 
 
 class QueueStateTests(unittest.TestCase):
@@ -95,4 +106,5 @@ class QueueStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

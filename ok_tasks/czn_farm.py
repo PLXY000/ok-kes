@@ -51,6 +51,18 @@ def is_graduated(criteria: GraduationCriteria, targets: GraduationCriteria | Non
     )) >= 2
 
 
+def is_archive_profile_page(ocr_texts: list[str]) -> bool:
+    """Fail-closed page check using both title and selected section labels.
+
+    It only confirms the screen type. It does not identify the character or
+    interpret archive contents.
+    """
+    normalized = "".join("".join(text.split()) for text in ocr_texts)
+    has_detail_title = any(marker in normalized for marker in ("详细资讯", "詳細資訊"))
+    has_archive_section = any(marker in normalized for marker in ("存档资料", "存檔資料"))
+    return has_detail_title and has_archive_section
+
+
 @dataclass(frozen=True)
 class CharacterProfile:
     character_id: str
@@ -214,4 +226,5 @@ def _state_from_dict(raw: dict[str, Any]) -> SessionState:
                               value.get("last_observation")) for key, value in raw["runs"].items()}
     return SessionState(FarmMode(raw["mode"]), profiles, runs,
                         raw.get("current_character_id"), QueueStatus(raw["queue_status"]))
+
 
