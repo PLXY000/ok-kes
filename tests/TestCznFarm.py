@@ -4,8 +4,10 @@ from pathlib import Path
 
 from ok_tasks.czn_farm import (
     CharacterProfile,
+    CharacterTargets,
     FarmMode,
     FarmQueue,
+    ArchiveSnapshot,
     GraduationCriteria,
     QueueStatus,
     RunObservation,
@@ -13,6 +15,7 @@ from ok_tasks.czn_farm import (
     SessionState,
     is_graduated,
     is_archive_profile_page,
+    evaluate_archive_snapshot,
     load_state,
     save_state,
 )
@@ -38,6 +41,34 @@ class ArchivePageTests(unittest.TestCase):
     def test_archive_page_marker_matching_ignores_whitespace(self):
         self.assertTrue(is_archive_profile_page(["詳細 資訊", "存檔 資料"]))
 
+    def test_archive_snapshot_evaluates_two_configured_categories(self):
+        targets = CharacterTargets(
+            core_cards=["极光剑"], target_shines=["万众英雄"], finished_equipment=["蚀化臂铠"]
+        )
+        snapshot = ArchiveSnapshot(
+            character_id="char-a", complete=True,
+            cards=["极光剑", "万众英雄"], flashing_cards=["万众英雄"],
+            equipment=["蚀化臂铠"],
+        )
+        self.assertEqual(
+            GraduationCriteria(True, True, True),
+            evaluate_archive_snapshot(snapshot, "char-a", targets),
+        )
+
+    def test_incomplete_or_wrong_character_snapshot_is_uncertain(self):
+        targets = CharacterTargets(["极光剑"], ["万众英雄"], ["蚀化臂铠"])
+        snapshot = ArchiveSnapshot("char-b", True, ["极光剑"], ["万众英雄"], ["蚀化臂铠"])
+        self.assertIsNone(evaluate_archive_snapshot(snapshot, "char-a", targets))
+        snapshot.character_id = "char-a"
+        snapshot.complete = False
+        self.assertIsNone(evaluate_archive_snapshot(snapshot, "char-a", targets))
+
+    def test_unconfigured_target_category_stays_false(self):
+        targets = CharacterTargets(core_cards=["极光剑"], target_shines=[], finished_equipment=["蚀化臂铠"])
+        snapshot = ArchiveSnapshot("char-a", True, ["极光剑"], [], ["蚀化臂铠"])
+        result = evaluate_archive_snapshot(snapshot, "char-a", targets)
+        self.assertEqual(GraduationCriteria(True, False, True), result)
+
 
 class QueueStateTests(unittest.TestCase):
     def setUp(self):
@@ -46,6 +77,8 @@ class QueueStateTests(unittest.TestCase):
                 CharacterProfile(
                     "char-a", "角色甲",
                     zero_system=GraduationCriteria(True, True, True),
+                    zero_system_targets=CharacterTargets(["极光剑"], ["万众英雄"], ["蚀化臂铠"]),
+                    season_targets=CharacterTargets(core_cards=["赛季核心卡"]),
                 ),
                 CharacterProfile(
                     "char-b", "角色乙",
@@ -96,6 +129,11 @@ class QueueStateTests(unittest.TestCase):
             restored = load_state(path)
         self.assertEqual(self.queue.state, restored)
 
+    def test_profiles_keep_separate_mode_targets(self):
+        profile = self.queue.state.profiles[0]
+        self.assertEqual(["极光剑"], profile.targets_for(FarmMode.ZERO_SYSTEM).core_cards)
+        self.assertEqual(["赛季核心卡"], profile.targets_for(FarmMode.SEASON).core_cards)
+
     def test_bad_json_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "state.json"
@@ -106,5 +144,6 @@ class QueueStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

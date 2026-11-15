@@ -41,6 +41,23 @@ class GraduationCriteria:
     finished_equipment: bool = False
 
 
+@dataclass(frozen=True)
+class CharacterTargets:
+    """Per-character target names read from a profile's archive page."""
+    core_cards: list[str] = field(default_factory=list)
+    target_shines: list[str] = field(default_factory=list)
+    finished_equipment: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ArchiveSnapshot:
+    character_id: str
+    complete: bool
+    cards: list[str] = field(default_factory=list)
+    flashing_cards: list[str] = field(default_factory=list)
+    equipment: list[str] = field(default_factory=list)
+
+
 def is_graduated(criteria: GraduationCriteria, targets: GraduationCriteria | None = None) -> bool:
     """A character graduates when any two enabled goals have been met."""
     enabled = targets or GraduationCriteria(True, True, True)
@@ -63,6 +80,35 @@ def is_archive_profile_page(ocr_texts: list[str]) -> bool:
     return has_detail_title and has_archive_section
 
 
+def evaluate_archive_snapshot(
+    snapshot: ArchiveSnapshot,
+    expected_character_id: str,
+    targets: CharacterTargets,
+) -> GraduationCriteria | None:
+    """Evaluate a complete, identity-matched archive snapshot; None means pause."""
+    if not snapshot.complete or not expected_character_id or snapshot.character_id != expected_character_id:
+        return None
+    configured = (targets.core_cards, targets.target_shines, targets.finished_equipment)
+    if sum(bool(values) for values in configured) < 2:
+        return None
+
+    def has_all(expected: list[str], observed: list[str]) -> bool:
+        if not expected:
+            return False
+        normalized_observed = {_normalize_game_text(value) for value in observed}
+        return all(_normalize_game_text(value) in normalized_observed for value in expected)
+
+    return GraduationCriteria(
+        core_cards=has_all(targets.core_cards, snapshot.cards),
+        target_shine=has_all(targets.target_shines, snapshot.flashing_cards),
+        finished_equipment=has_all(targets.finished_equipment, snapshot.equipment),
+    )
+
+
+def _normalize_game_text(value: str) -> str:
+    return "".join(value.split()).casefold()
+
+
 @dataclass(frozen=True)
 class CharacterProfile:
     character_id: str
@@ -71,9 +117,14 @@ class CharacterProfile:
     # Kept per mode so zero-system and season goals can differ independently.
     zero_system: GraduationCriteria = field(default_factory=GraduationCriteria)
     season: GraduationCriteria = field(default_factory=GraduationCriteria)
+    zero_system_targets: CharacterTargets = field(default_factory=CharacterTargets)
+    season_targets: CharacterTargets = field(default_factory=CharacterTargets)
 
     def goals_for(self, mode: FarmMode) -> GraduationCriteria:
         return self.zero_system if mode is FarmMode.ZERO_SYSTEM else self.season
+
+    def targets_for(self, mode: FarmMode) -> CharacterTargets:
+        return self.zero_system_targets if mode is FarmMode.ZERO_SYSTEM else self.season_targets
 
 
 @dataclass(frozen=True)
@@ -221,10 +272,13 @@ def _state_from_dict(raw: dict[str, Any]) -> SessionState:
             character_id=item["character_id"], display_name=item["display_name"], enabled=item.get("enabled", True),
             zero_system=GraduationCriteria(**item.get("zero_system", {})),
             season=GraduationCriteria(**item.get("season", {})),
+            zero_system_targets=CharacterTargets(**item.get("zero_system_targets", {})),
+            season_targets=CharacterTargets(**item.get("season_targets", {})),
         ))
     runs = {key: CharacterRun(RunStatus(value["status"]), int(value.get("completed_runs", 0)),
                               value.get("last_observation")) for key, value in raw["runs"].items()}
     return SessionState(FarmMode(raw["mode"]), profiles, runs,
                         raw.get("current_character_id"), QueueStatus(raw["queue_status"]))
+
 
 
